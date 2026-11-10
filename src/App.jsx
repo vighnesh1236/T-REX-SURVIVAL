@@ -88,7 +88,7 @@ function App() {
       jungleFilter.frequency.value = 2400;
       jungleFilter.Q.value = 0.35;
       const jungleGain = context.createGain();
-      jungleGain.gain.value = 0.19;
+      jungleGain.gain.value = 0.26;
       jungleFilter.connect(jungleGain);
       jungleGain.connect(musicGain);
       const noiseBuffer = context.createBuffer(1, context.sampleRate * 2, context.sampleRate);
@@ -168,11 +168,38 @@ function App() {
       howlLfo.connect(howlDepth);
       howlDepth.connect(howl.frequency);
       howlLfo.start();
-      engine = { context, musicGain, sfxGain, chaseGain };
+
+      const motif = [110, 130.81, 146.83, 123.47, 98, 110, 164.81, 130.81];
+      let note = 0;
+      const playAmbientNote = () => {
+        if (context.state !== 'running') return;
+        const time = context.currentTime;
+        const voice = context.createOscillator();
+        const voiceFilter = context.createBiquadFilter();
+        const envelope = context.createGain();
+        voice.type = 'triangle';
+        voice.frequency.setValueAtTime(motif[note % motif.length], time);
+        voiceFilter.type = 'lowpass';
+        voiceFilter.frequency.value = 620;
+        envelope.gain.setValueAtTime(0.001, time);
+        envelope.gain.linearRampToValueAtTime(0.12, time + 0.09);
+        envelope.gain.exponentialRampToValueAtTime(0.001, time + 1.15);
+        voice.connect(voiceFilter);
+        voiceFilter.connect(envelope);
+        envelope.connect(musicGain);
+        voice.start(time);
+        voice.stop(time + 1.2);
+        note += 1;
+      };
+      playAmbientNote();
+      const musicTimer = window.setInterval(playAmbientNote, 1450);
+      engine = { context, musicGain, sfxGain, chaseGain, musicTimer };
       audio.current = engine;
     }
-    if (engine.context.state === 'suspended') engine.context.resume();
-  }, [game.screen, music, sound]);
+    if (engine.context.state === 'suspended') {
+      engine.context.resume().catch(() => inform('Tap the screen to enable game audio'));
+    }
+  }, [game.screen, inform, music, sound]);
 
   useEffect(() => {
     if (!audio.current) return;
@@ -215,7 +242,10 @@ function App() {
     roarBody.stop(now + 1.6);
   }, [game.screen, sound]);
   useEffect(() => () => {
-    if (audio.current) audio.current.context.close();
+    if (audio.current) {
+      window.clearInterval(audio.current.musicTimer);
+      audio.current.context.close();
+    }
   }, []);
 
   useEffect(() => {
